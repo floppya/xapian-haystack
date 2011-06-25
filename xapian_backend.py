@@ -42,6 +42,10 @@ DEFAULT_XAPIAN_FLAGS = (
     xapian.QueryParser.FLAG_PURE_NOT
 )
 
+MATCHSPY_AVAILABLE = ( # Using Xapian version >= 1.2
+    xapian.major_version() == 1 and xapian.minor_version() >= 2 or
+    xapian.major_version() > 1
+)
 
 class InvalidIndexError(HaystackError):
     """Raised when an index can not be opened."""
@@ -423,7 +427,17 @@ class SearchBackend(BaseSearchBackend):
         if not end_offset:
             end_offset = database.get_doccount() - start_offset
         
-        matches = self._get_enquire_mset(database, enquire, start_offset, end_offset)
+        if facets and MATCHSPY_AVAILABLE:
+            facet_spies = {}
+            for facet_field in facets:
+                spy = xapian.ValueCountMatchSpy(self._value_column(facet_field))
+                facet_spies[facet_field] = spy
+                enquire.add_matchspy(spy)
+            check_at_least = database.get_doccount()
+        else:
+            check_at_least = 0
+
+        matches = self._get_enquire_mset(database, enquire, start_offset, end_offset, check_at_least)
         
         for match in matches:
             app_label, module_name, pk, model_data = pickle.loads(self._get_document_data(database, match.document))
@@ -438,7 +452,10 @@ class SearchBackend(BaseSearchBackend):
             )
         
         if facets:
-            facets_dict['fields'] = self._do_field_facets(results, facets)
+            if MATCHSPY_AVAILABLE:
+                facets_dict['fields'] = self._do_matchspy_field_facets(facet_spies)
+            else:
+                facets_dict['fields'] = self._do_field_facets(results, facets)
         if date_facets:
             facets_dict['dates'] = self._do_date_facets(results, date_facets)
         if query_facets:
@@ -646,6 +663,34 @@ class SearchBackend(BaseSearchBackend):
                 content = match_re.sub('<%s>%s</%s>' % (tag, term, tag), content)
         
         return content
+
+    def _do_matchspy_field_facets(self, facet_spies):
+        """
+        Private method that facets a document by field name.
+
+        Required arguments:
+            `facet_spies` -- A dictionary of (<field_name>, <ValueCountMatchSpy>)
+
+        Returns results ordered in descending frequency.
+
+        TODO: I'm not sure how this will handle MultiValueFields
+        """
+        facet_dict = {}
+        # build a map of the faceted field schemas
+        field_schema_map = dict(
+            [ (f['field_name'], f) for f in self.schema if f['field_name'] in facet_spies ]
+        )
+        for facet_field, facet_spy in facet_spies.items():
+            facet_values = []
+            fs = field_schema_map[facet_field]
+            requires_unserialize = fs['type'] == 'float'
+            for term in facet_spy.top_values(self._value_column(facet_field)):
+                term_term = term.term
+                if requires_unserialize:
+                    term_term = xapian.sortable_unserialize(term_term)
+                facet_values.append((term_term, term.termfreq))
+            facet_dict['facet_field'] = facet_values
+        return facet_dict
     
     def _do_field_facets(self, results, field_facets):
         """
@@ -822,7 +867,7 @@ class SearchBackend(BaseSearchBackend):
 
         return database
 
-    def _get_enquire_mset(self, database, enquire, start_offset, end_offset):
+    def _get_enquire_mset(self, database, enquire, start_offset, end_offset, check_at_least=0):
         """
         A safer version of Xapian.enquire.get_mset
 
@@ -836,10 +881,10 @@ class SearchBackend(BaseSearchBackend):
             `end_offset` -- The end offset to pass to `enquire.get_mset`
         """
         try:
-            return enquire.get_mset(start_offset, end_offset)
+            return enquire.get_mset(start_offset, end_offset, check_at_least)
         except xapian.DatabaseModifiedError:
             database.reopen()
-            return enquire.get_mset(start_offset, end_offset)
+            return enquire.get_mset(start_offset, end_offset, check_at_least)
 
     def _get_document_data(self, database, document):
         """
