@@ -42,10 +42,8 @@ DEFAULT_XAPIAN_FLAGS = (
     xapian.QueryParser.FLAG_PURE_NOT
 )
 
-MATCHSPY_AVAILABLE = ( # Using Xapian version >= 1.2
-    xapian.major_version() == 1 and xapian.minor_version() >= 2 or
-    xapian.major_version() > 1
-)
+MATCHSPY_AVAILABLE = hasattr(xapian, 'ValueCountMatchSpy')
+
 
 class InvalidIndexError(HaystackError):
     """Raised when an index can not be opened."""
