@@ -42,10 +42,9 @@ DEFAULT_XAPIAN_FLAGS = (
     xapian.QueryParser.FLAG_PURE_NOT
 )
 
-MATCHSPY_AVAILABLE = ( # Using Xapian version >= 1.2
-    xapian.major_version() == 1 and xapian.minor_version() >= 2 or
-    xapian.major_version() > 1
-)
+VALUECOUNT_MATCHSPY_AVAILABLE = hasattr(xapian, 'ValueCountMatchSpy')
+MULTIVALUECOUNT_MATCHSPY_AVAILABLE = hasattr(xapian, 'MultiValueCountMatchSpy')
+
 
 class InvalidIndexError(HaystackError):
     """Raised when an index can not be opened."""
@@ -447,10 +446,18 @@ class SearchBackend(BaseSearchBackend):
         if not end_offset:
             end_offset = database.get_doccount() - start_offset
         
-        if facets and MATCHSPY_AVAILABLE:
+        if facets and VALUECOUNT_MATCHSPY_AVAILABLE:
             facet_spies = {}
             for facet_field in facets:
-                spy = xapian.ValueCountMatchSpy(self._value_column(facet_field))
+                if (MULTIVALUECOUNT_MATCHSPY_AVALIABLE and
+                        self._multi_value_field(facet_field)):
+                    spy = xapian.MultiValueCountMatchSpy(
+                        self._value_column(facet_field)
+                    )
+                else:
+                    spy = xapian.ValueCountMatchSpy(
+                        self._value_column(facet_field)
+                    )
                 facet_spies[facet_field] = spy
                 enquire.add_matchspy(spy)
             check_at_least = database.get_doccount()
@@ -472,10 +479,14 @@ class SearchBackend(BaseSearchBackend):
             )
         
         if facets:
-            if MATCHSPY_AVAILABLE:
+            if VALUECOUNT_MATCHSPY_AVAILABLE:
                 facets_dict['fields'] = self._do_matchspy_field_facets(facet_spies)
-            else:
-                facets_dict['fields'] = self._do_field_facets(results, facets)
+                # Remove any fields we've faceted with MatchSpies
+                for facet_field in facets:
+                    if facet_field in facets_dicts['fields']:
+                        facets.remove(facet_field)
+            # Run the slow faceting code on any remaining fields
+            facets_dict['fields'] = self._do_field_facets(results, facets)
         if date_facets:
             facets_dict['dates'] = self._do_date_facets(results, date_facets)
         if query_facets:
@@ -696,8 +707,6 @@ class SearchBackend(BaseSearchBackend):
             `facet_spies` -- A dictionary of (<field_name>, <ValueCountMatchSpy>)
 
         Returns results ordered in descending frequency.
-
-        TODO: I'm not sure how this will handle MultiValueFields
         """
         facet_dict = {}
         # build a map of the faceted field schemas
@@ -708,7 +717,7 @@ class SearchBackend(BaseSearchBackend):
             facet_values = []
             fs = field_schema_map[facet_field]
             requires_unserialize = fs['type'] == 'float'
-            for term in facet_spy.top_values(self._value_column(facet_field)):
+            for term in facet_spy.top_values():
                 term_term = term.term
                 if requires_unserialize:
                     term_term = xapian.sortable_unserialize(term_term)
