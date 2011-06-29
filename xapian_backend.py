@@ -471,7 +471,9 @@ class SearchBackend(BaseSearchBackend):
                         facets.remove(facet_field)
             # Run the slow faceting code on any remaining fields
             if facets:
-                facets_dict['fields'] = self._do_field_facets(results, facets)
+                facets_dict['fields'].update(
+                    self._do_field_facets(results, facets)
+                )
         if date_facets:
             facets_dict['dates'] = self._do_date_facets(results, date_facets)
         if query_facets:
