@@ -431,7 +431,7 @@ class SearchBackend(BaseSearchBackend):
             for facet_field in facets:
                 spy = None
                 if self._multi_value_field(facet_field):
-                    if MULTIVALUECOUNT_MATCHSPY_AVALIABLE:
+                    if MULTIVALUECOUNT_MATCHSPY_AVAILABLE:
                         spy = xapian.MultiValueCountMatchSpy(
                             self._value_column(facet_field)
                         )
