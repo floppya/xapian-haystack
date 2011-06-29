@@ -429,17 +429,21 @@ class SearchBackend(BaseSearchBackend):
         if facets and VALUECOUNT_MATCHSPY_AVAILABLE:
             facet_spies = {}
             for facet_field in facets:
-                if (MULTIVALUECOUNT_MATCHSPY_AVALIABLE and
-                        self._multi_value_field(facet_field)):
-                    spy = xapian.MultiValueCountMatchSpy(
-                        self._value_column(facet_field)
-                    )
+                spy = None
+                if self._multi_value_field(facet_field):
+                    if MULTIVALUECOUNT_MATCHSPY_AVALIABLE:
+                        spy = xapian.MultiValueCountMatchSpy(
+                            self._value_column(facet_field)
+                        )
                 else:
                     spy = xapian.ValueCountMatchSpy(
                         self._value_column(facet_field)
                     )
-                facet_spies[facet_field] = spy
-                enquire.add_matchspy(spy)
+                # Possibly, the user doesn't have MultiValueCountMatchSpy
+                # so don't add the spy and fall back to old code later.
+                if spy:
+                    facet_spies[facet_field] = spy
+                    enquire.add_matchspy(spy)
             check_at_least = database.get_doccount()
         else:
             check_at_least = 0
@@ -466,7 +470,8 @@ class SearchBackend(BaseSearchBackend):
                     if facet_field in facets_dicts['fields']:
                         facets.remove(facet_field)
             # Run the slow faceting code on any remaining fields
-            facets_dict['fields'] = self._do_field_facets(results, facets)
+            if facets:
+                facets_dict['fields'] = self._do_field_facets(results, facets)
         if date_facets:
             facets_dict['dates'] = self._do_date_facets(results, date_facets)
         if query_facets:
