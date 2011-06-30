@@ -65,7 +65,7 @@ class XapianMockSearchIndex(indexes.SearchIndex):
     
     # Various MultiValueFields
     sites = indexes.MultiValueField()
-    tags = indexes.MultiValueField()
+    tags = indexes.MultiValueField(faceted=True)
     keys = indexes.MultiValueField()
     titles = indexes.MultiValueField()
     
@@ -229,7 +229,27 @@ class XapianSearchBackendTestCase(TestCase):
         results = self.backend.search(xapian.Query('indexed'), facets=['sites'])
         self.assertEqual(results['hits'], 3)
         self.assertEqual(results['facets']['fields']['sites'], [('1', 1), ('3', 2), ('2', 2), ('4', 1), ('6', 2), ('9', 1)])
-    
+
+        results = self.backend.search(
+            xapian.Query('indexed'), facets=['name','tags']
+        )
+        # ensure single valued faceting works in conjunction with multivalue
+        self.assertEqual(
+            results['facets']['fields']['name'],
+            [('david1', 1), ('david2', 1), ('david3', 1)]
+        )
+        expected_tag_results = [
+                ('a', 1), ('b', 1), ('c', 1), ('ab', 1), ('bc', 1),
+                ('cd', 1), ('an', 1), ('to', 1), ('or', 1)
+        ]
+        tag_results = results['facets']['fields']['tags']
+        # make sure we at least have the right data, despite ordering
+        self.assertEqual(len(expected_tag_results), len(tag_results))
+        for tag_result in tag_results:
+            self.assertIn(tag_result, expected_tag_results)
+        for expected_result in expected_tag_results:
+            self.assertIn(expected_result, tag_results)
+
     def test_date_facets(self):
         self.backend.update(self.index, self.sample_objs)
         self.assertEqual(self.backend.document_count(), 3)
@@ -404,25 +424,29 @@ class XapianSearchBackendTestCase(TestCase):
         self.assertEqual(_marshal_value(datetime.datetime(2009, 5, 18, 1, 16, 30, 250)), u'20090518011630000250')
     
     def test_build_schema(self):
+        import logging
         (content_field_name, fields) = self.backend.build_schema(self.site.all_searchfields())
         self.assertEqual(content_field_name, 'text')
-        self.assertEqual(len(fields), 14)
+        self.maxDiff = None
         self.assertEqual(fields, [
             {'column': 0, 'type': 'text', 'field_name': 'name', 'multi_valued': 'false'},
             {'column': 1, 'type': 'text', 'field_name': 'tags', 'multi_valued': 'true'},
             {'column': 2, 'type': 'text', 'field_name': 'keys', 'multi_valued': 'true'},
             {'column': 3, 'type': 'text', 'field_name': 'text', 'multi_valued': 'false'},
             {'column': 4, 'type': 'float', 'field_name': 'popularity', 'multi_valued': 'false'},
-            {'column': 5, 'type': 'text', 'field_name': 'sites', 'multi_valued': 'true'},
+            {'column': 5, 'type': 'text', 'field_name': 'tags_exact',
+'multi_valued': 'true' },
             {'column': 6, 'type': 'long', 'field_name': 'value', 'multi_valued': 'false'},
-            {'column': 7, 'type': 'text', 'field_name': 'url', 'multi_valued': 'false'},
-            {'column': 8, 'type': 'boolean', 'field_name': 'flag', 'multi_valued': 'false'},
-            {'column': 9, 'type': 'text', 'field_name': 'titles', 'multi_valued': 'true'},
-            {'column': 10, 'type': 'date', 'field_name': 'exp_date', 'multi_valued': 'false'},
-            {'column': 11, 'type': 'text', 'field_name': 'name_exact', 'multi_valued': 'false'},
-            {'column': 12, 'type': 'date', 'field_name': 'pub_date', 'multi_valued': 'false'},
-            {'column': 13, 'type': 'text', 'field_name': 'empty', 'multi_valued': 'false'}
+            {'column': 7, 'type': 'text', 'field_name': 'sites', 'multi_valued': 'true'},
+            {'column': 8, 'type': 'text', 'field_name': 'url', 'multi_valued': 'false'},
+            {'column': 9, 'type': 'boolean', 'field_name': 'flag', 'multi_valued': 'false'},
+            {'column': 10, 'type': 'text', 'field_name': 'titles', 'multi_valued': 'true'},
+            {'column': 11, 'type': 'date', 'field_name': 'exp_date', 'multi_valued': 'false'},
+            {'column': 12, 'type': 'text', 'field_name': 'name_exact', 'multi_valued': 'false'},
+            {'column': 13, 'type': 'date', 'field_name': 'pub_date', 'multi_valued': 'false'},
+            {'column': 14, 'type': 'text', 'field_name': 'empty', 'multi_valued': 'false'}
         ])
+        self.assertEqual(len(fields), 15)
     
     def test_parse_query(self):
         self.backend.update(self.index, self.sample_objs)
@@ -612,3 +636,4 @@ class XapianBoostBackendTestCase(TestCase):
             'core.afourthmockmodel.2',
             'core.afourthmockmodel.4'
         ])
+
