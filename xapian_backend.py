@@ -487,7 +487,7 @@ class SearchBackend(BaseSearchBackend):
                 facets_dict['fields'] = self._do_matchspy_field_facets(facet_spies)
                 # Remove any fields we've faceted with MatchSpies
                 for facet_field in facets:
-                    if facet_field in facets_dicts['fields']:
+                    if facet_field in facets_dict['fields']:
                         facets.remove(facet_field)
             # Run the slow faceting code on any remaining fields
             if facets:
@@ -724,12 +724,12 @@ class SearchBackend(BaseSearchBackend):
             facet_values = []
             fs = field_schema_map[facet_field]
             requires_unserialize = fs['type'] == 'float'
-            for term in facet_spy.top_values():
+            for term in facet_spy.top_values(fs['column']):
                 term_term = term.term
                 if requires_unserialize:
                     term_term = xapian.sortable_unserialize(term_term)
                 facet_values.append((term_term, term.termfreq))
-            facet_dict['facet_field'] = facet_values
+            facet_dict[facet_field] = facet_values
         return facet_dict
     
     def _do_field_facets(self, results, field_facets):
