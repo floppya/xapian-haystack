@@ -401,7 +401,7 @@ class SearchBackend(BaseSearchBackend):
         if narrow_queries is not None:
             query = xapian.Query(
                 xapian.Query.OP_AND, query, xapian.Query(
-                    xapian.Query.OP_OR, [self.parse_query(narrow_query) for narrow_query in narrow_queries]
+                    xapian.Query.OP_AND, [self.parse_query(narrow_query) for narrow_query in narrow_queries]
                 )
             )
         
