@@ -444,7 +444,9 @@ class SearchBackend(BaseSearchBackend):
             'queries': {},
         }
         
-        if not end_offset:
+        if end_offset:
+            end_offset = end_offset - start_offset
+        else:
             end_offset = database.get_doccount() - start_offset
         
         if facets and VALUECOUNT_MATCHSPY_AVAILABLE:
